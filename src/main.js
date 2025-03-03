@@ -3,21 +3,26 @@ const logger = require('./utils/logger');
 const db = require('./utils/db');
 const config = require('./config');
 
+let bot; // 全局变量存储机器人实例
+
 async function bootstrap() {
   // 初始化数据库连接
   await db.connect(config.db.path);
 
   // 启动机器人
-  const bot = new SummaryBot();
-  await bot.start();
+  const summaryBot = new SummaryBot();
+  bot = await summaryBot.start();
 
   logger.info('服务已成功启动');
 }
 
 process.on('SIGINT', async () => {
+  logger.info('正在关闭服务...');
   await db.close();
-  // 这里可能需要定义 bot 变量
-  // await bot.stop();
+  if (bot) {
+    await bot.stop();
+    logger.info('机器人已停止');
+  }
   process.exit(0);
 });
 

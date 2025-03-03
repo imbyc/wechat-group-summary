@@ -4,7 +4,8 @@ PRAGMA foreign_keys = ON;
 -- 群组信息表
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  room_id TEXT NOT NULL UNIQUE,
+  room_id TEXT NOT NULL,
+  wechat_id TEXT NOT NULL,  -- 新增的微信账号字段
   name TEXT NOT NULL,
   avatar TEXT,
   notice TEXT,
@@ -12,7 +13,8 @@ CREATE TABLE IF NOT EXISTS groups (
   is_managed BOOLEAN DEFAULT 1,
   last_summary_time DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(room_id, wechat_id)  -- 修改唯一约束为群ID和微信号的组合
 );
 
 CREATE INDEX idx_groups_updated ON groups (updated_at);
@@ -28,12 +30,14 @@ CREATE TABLE IF NOT EXISTS messages (
   msg_time DATETIME(3) NOT NULL,
   msg_type INTEGER NOT NULL CHECK(msg_type BETWEEN 1 AND 8),
   is_at_me BOOLEAN DEFAULT 0,
+  wechat_id TEXT NOT NULL,  -- 新增字段
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_messages_room_time ON messages (room_id, msg_time);
 CREATE INDEX idx_messages_sender ON messages (sender_id);
+CREATE INDEX idx_messages_wechat ON messages (wechat_id);
 
 -- 总结历史表
 CREATE TABLE IF NOT EXISTS summaries (
@@ -46,7 +50,10 @@ CREATE TABLE IF NOT EXISTS summaries (
   end_time DATETIME NOT NULL,
   token_usage INTEGER CHECK(token_usage >= 0),
   status INTEGER DEFAULT 0 CHECK(status BETWEEN 0 AND 2),
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  wechat_id TEXT NOT NULL,  -- 新增字段
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_summaries_time_range ON summaries (start_time, end_time); 
+CREATE INDEX idx_summaries_time_range ON summaries (start_time, end_time);
+CREATE INDEX idx_summaries_wechat ON summaries (wechat_id);
