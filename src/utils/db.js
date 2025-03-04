@@ -1,10 +1,10 @@
 const sqlite3 = require('sqlite3').verbose();
 const logger = require('./logger');
+const config = require('../config');
 
 class Database {
   constructor() {
     this.db = null;
-    this.isTestEnv = process.env.NODE_ENV === 'test';
   }
 
   async connect(path = './data/chat.db') {
@@ -15,10 +15,8 @@ class Database {
           return reject(err);
         }
         
-        if (!this.isTestEnv) {
-          logger.info(`已连接数据库: ${path}`);
-          this.runPragma();
-        }
+        logger.info(`已连接数据库: ${path}`);
+        this.runPragma();
         resolve();
       });
     });
@@ -26,8 +24,10 @@ class Database {
 
   runPragma() {
     this.db.serialize(() => {
-      this.db.run('PRAGMA journal_mode = WAL;');
-      this.db.run('PRAGMA busy_timeout = 5000;');
+      if (config.db.walMode) {
+        this.db.run('PRAGMA journal_mode = WAL;');
+        this.db.run('PRAGMA busy_timeout = 5000;');
+      }
     });
   }
 
