@@ -34,7 +34,7 @@ class SummaryBot {
 
     this.syncProgress = {
       current: 0,
-      total: 2 // 群组信息和历史消息两个任务
+      total: 1 // 移除历史消息同步任务，只保留群组信息同步
     };
   }
   
@@ -109,9 +109,6 @@ class SummaryBot {
           logger.info('开始验证数据库写入...');
           const testRecord = await db.get("SELECT COUNT(*) AS count FROM messages");
           logger.info(`当前消息记录数: ${testRecord.count}`);
-
-          logger.info('开始同步历史消息...');
-          await this.syncHistoryMessages();
         } catch (err) {
           logger.error('同步过程中发生致命错误:', err.stack); // 打印完整堆栈
           process.exit(1); // 明确退出进程
@@ -270,21 +267,6 @@ class SummaryBot {
         [this.currentUser.id]
       );
       logger.error(`同步群组信息失败: ${err.message}`);
-    }
-  }
-
-  async syncHistoryMessages() {
-    let lastReport = Date.now();
-    const rooms = await this.bot.Room.findAll();
-    
-    for (let i = 0; i < rooms.length; i++) {
-      const room = rooms[i];
-      // 每5秒报告一次进度
-      if (Date.now() - lastReport > 5000) {
-        logger.info(`正在同步 ${await room.topic()} (${i+1}/${rooms.length})`);
-        lastReport = Date.now();
-      }
-      // ...原有同步逻辑
     }
   }
 

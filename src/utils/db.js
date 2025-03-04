@@ -27,7 +27,6 @@ class Database {
   runPragma() {
     this.db.serialize(() => {
       this.db.run('PRAGMA journal_mode = WAL;');
-      this.db.run('PRAGMA foreign_keys = ON;');
       this.db.run('PRAGMA busy_timeout = 5000;');
     });
   }
