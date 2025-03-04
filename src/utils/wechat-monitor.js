@@ -2,6 +2,7 @@ const { spawn, exec } = require('child_process');
 const path = require('path');
 const logger = require('./logger');
 const fs = require('fs');
+const { promisify } = require('util');
 
 class WechatMonitor {
   constructor(config = {}) {
@@ -46,48 +47,31 @@ class WechatMonitor {
    * @returns {Promise<boolean>}
    */
   async startWechat() {
-    logger.info('正在启动微信...');
-    
-    return new Promise((resolve) => {
-      try {
-        // 确保WeChat.exe存在
-        if (!fs.existsSync(this.wechatPath)) {
-          logger.error(`微信可执行文件不存在: ${this.wechatPath}`);
-          resolve(false);
-          return;
-        }
-        
-        // 启动微信进程
-        this.wechatProcess = spawn(this.wechatPath, [], {
-          detached: true,
-          stdio: 'ignore'
-        });
-        
-        // 分离子进程，让它独立运行
-        this.wechatProcess.unref();
-        
-        logger.info('微信启动命令已执行');
-        
-        // 添加记录启动时间
-        this.wechatStartTime = Date.now();
-        this.isLoginComplete = false;
-        
-        // 等待5秒确保微信有足够时间启动
-        setTimeout(async () => {
-          const running = await this.isWechatRunning();
-          if (running) {
-            logger.info('微信已成功启动');
-            resolve(true);
-          } else {
-            logger.error('微信启动失败');
-            resolve(false);
-          }
-        }, 5000);
-      } catch (error) {
-        logger.error(`启动微信时出错: ${error.message}`);
-        resolve(false);
+    try {
+      logger.info(`正在启动微信客户端: ${this.wechatPath}`);
+      const command = `start "" "${this.wechatPath}"`;
+      
+      // 使用更可靠的启动方式
+      const execAsync = promisify(exec);
+      
+      // 添加超时控制
+      const { stdout, stderr } = await execAsync(command, { 
+        shell: 'cmd.exe',
+        windowsHide: true,
+        timeout: 15000 // 15秒超时
+      });
+      
+      if (stderr) {
+        logger.error('微信启动错误:', stderr);
+        return false;
       }
-    });
+      
+      this.wechatStartTime = Date.now();
+      return true;
+    } catch (err) {
+      logger.error('启动微信失败:', err);
+      return false;
+    }
   }
 
   /**

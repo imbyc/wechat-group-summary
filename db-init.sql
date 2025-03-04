@@ -1,6 +1,3 @@
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 -- 群组信息表
 CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,3 +54,15 @@ CREATE TABLE IF NOT EXISTS summaries (
 
 CREATE INDEX idx_summaries_time_range ON summaries (start_time, end_time);
 CREATE INDEX idx_summaries_wechat ON summaries (wechat_id);
+
+-- 新增同步记录表
+CREATE TABLE IF NOT EXISTS sync_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  wechat_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('group', 'message')),
+  status TEXT NOT NULL CHECK(status IN ('pending', 'completed', 'failed')),
+  sync_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_sync_logs_wechat ON sync_logs (wechat_id, type);

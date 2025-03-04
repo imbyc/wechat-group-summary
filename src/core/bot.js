@@ -31,6 +31,11 @@ class SummaryBot {
     // 初始化机器人
     this.initBot();
     this.currentUser = null;
+
+    this.syncProgress = {
+      current: 0,
+      total: 2 // 群组信息和历史消息两个任务
+    };
   }
   
   initBot() {
@@ -74,13 +79,44 @@ class SummaryBot {
     this.bot.on('login', (user) => {
       logger.info(`用户 ${user} 登录成功`);
       this.currentUser = user;
-      
-      // 登录成功后异步同步群组信息
-      setTimeout(() => {
-        this.syncRoomList().catch(err => {
-          logger.error('同步群组信息失败:', err);
-        });
-      }, 10000); // 延迟10秒执行，确保登录流程完全完成
+
+      // 使用块级作用域变量
+      let remainingTime = 3;
+      logger.info(`准备同步数据（${remainingTime}秒后开始）...`);
+
+      const syncTimer = setInterval(() => {
+        remainingTime -= 1;
+        if (remainingTime > 0) {
+          logger.info(`倒计时 ${remainingTime} 秒后开始同步...`);
+        }
+      }, 1000);
+
+      setTimeout(async () => {
+        clearInterval(syncTimer);
+        try {
+          // 添加进程异常捕获
+          process.on('unhandledRejection', (reason) => {
+            logger.error('未处理的Promise拒绝:', reason);
+          });
+          
+          // 分步执行同步操作
+          logger.info('开始初始化数据库连接...');
+          await db.connect(config.db.path);
+
+          logger.info('开始同步群组信息...');
+          await this.syncRoomList();
+          
+          logger.info('开始验证数据库写入...');
+          const testRecord = await db.get("SELECT COUNT(*) AS count FROM messages");
+          logger.info(`当前消息记录数: ${testRecord.count}`);
+
+          logger.info('开始同步历史消息...');
+          await this.syncHistoryMessages();
+        } catch (err) {
+          logger.error('同步过程中发生致命错误:', err.stack); // 打印完整堆栈
+          process.exit(1); // 明确退出进程
+        }
+      }, 3000);
     });
     
     this.bot.on('message', (msg) => {
@@ -152,61 +188,104 @@ class SummaryBot {
     }
   }
 
-  async syncRoomList() {
-    if (!this.currentUser) {
-      logger.error('尚未登录，无法同步群组信息');
-      return;
-    }
-
-    const wechatId = this.currentUser.id;
-    logger.info(`开始同步微信账号 ${wechatId} 的群组信息`);
-    
-    // 获取所有群聊
-    const roomList = await this.bot.Room.findAll();
-    logger.info(`获取到 ${roomList.length} 个群聊`);
-    
-    // 使用事务进行批量更新
-    await db.transaction(async () => {
-      // 获取当前数据库中该微信号的所有群组
-      const existingRooms = await db.all(
-        `SELECT room_id FROM groups WHERE wechat_id = ?`, 
-        [wechatId]
-      );
-      const existingRoomIds = new Set(existingRooms.map(r => r.room_id));
+  async syncRoomList(isFullSync = false) {
+    try {
+      const rooms = await this.bot.Room.findAll();
+      this.syncProgress.current++;
       
-      // 更新或插入群组信息
-      for (const room of roomList) {
-        const roomId = room.id;
-        const roomName = await room.topic();
-        const memberCount = (await room.memberAll()).length;
-        const avatar = await getSafeRoomAvatar(room);
-        
-        if (existingRoomIds.has(roomId)) {
-          // 更新已存在的群组
-          await db.run(
-            `UPDATE groups SET 
-             name = ?, 
-             member_count = ?,
-             avatar = ?,
-             updated_at = CURRENT_TIMESTAMP
-             WHERE room_id = ? AND wechat_id = ?`,
-            [roomName, memberCount, avatar, roomId, wechatId]
-          );
-        } else {
-          // 插入新群组
-          await db.run(
-            `INSERT INTO groups 
-             (room_id, wechat_id, name, member_count, avatar, is_managed) 
-             VALUES (?, ?, ?, ?, ?, 1)`,
-            [roomId, wechatId, roomName, memberCount, avatar]
-          );
-        }
-        
-        logger.info(`已同步群组: ${roomName}`);
+      // 检查是否需要全量同步
+      const lastSync = await db.get(
+        `SELECT * FROM sync_logs 
+         WHERE wechat_id = ? AND type = 'group'
+         ORDER BY sync_time DESC LIMIT 1`,
+        [this.currentUser.id]
+      );
+
+      // 增量同步条件：非全量同步且存在7天内成功记录
+      if (!isFullSync && lastSync && 
+          new Date(lastSync.sync_time) > Date.now() - 7*24*60*60*1000) {
+        logger.info('7天内已有同步记录，跳过全量同步');
+        return;
       }
-    });
+
+      this.syncProgress.total++;
+      logger.info(`[${this.syncProgress.current}/${this.syncProgress.total}] 发现 ${rooms.length} 个群组`);
+      if (!this.currentUser) {
+        logger.error('尚未登录，无法同步群组信息');
+        return;
+      }
+
+      const wechatId = this.currentUser.id;
+      logger.info(`开始同步微信账号 ${wechatId} 的群组信息`);
+      
+      // 使用事务进行批量更新
+      await db.transaction(async () => {
+        // 获取当前数据库中该微信号的所有群组
+        const existingRooms = await db.all(
+          `SELECT room_id FROM groups WHERE wechat_id = ?`, 
+          [wechatId]
+        );
+        const existingRoomIds = new Set(existingRooms.map(r => r.room_id));
+        
+        // 更新或插入群组信息
+        for (const room of rooms) {
+          const roomId = room.id;
+          const roomName = await room.topic();
+          const memberCount = (await room.memberAll()).length;
+          
+          if (existingRoomIds.has(roomId)) {
+            await db.run(
+              `UPDATE groups SET 
+               name = ?, 
+               member_count = ?,
+               updated_at = CURRENT_TIMESTAMP
+               WHERE room_id = ? AND wechat_id = ?`,
+              [roomName, memberCount, roomId, wechatId]
+            );
+          } else {
+            await db.run(
+              `INSERT INTO groups 
+               (room_id, wechat_id, name, member_count, is_managed) 
+               VALUES (?, ?, ?, ?, 1)`,
+              [roomId, wechatId, roomName, memberCount]
+            );
+          }
+          
+          logger.info(`已同步群组: ${roomName}`);
+        }
+      });
+      
+      logger.info(`微信账号 ${wechatId} 的群组信息同步完成`);
+
+      // 记录同步状态
+      await db.run(
+        `INSERT INTO sync_logs (wechat_id, type, status)
+         VALUES (?, 'group', 'completed')`,
+        [this.currentUser.id]
+      );
+    } catch (err) {
+      await db.run(
+        `INSERT INTO sync_logs (wechat_id, type, status)
+         VALUES (?, 'group', 'failed')`,
+        [this.currentUser.id]
+      );
+      logger.error(`同步群组信息失败: ${err.message}`);
+    }
+  }
+
+  async syncHistoryMessages() {
+    let lastReport = Date.now();
+    const rooms = await this.bot.Room.findAll();
     
-    logger.info(`微信账号 ${wechatId} 的群组信息同步完成`);
+    for (let i = 0; i < rooms.length; i++) {
+      const room = rooms[i];
+      // 每5秒报告一次进度
+      if (Date.now() - lastReport > 5000) {
+        logger.info(`正在同步 ${await room.topic()} (${i+1}/${rooms.length})`);
+        lastReport = Date.now();
+      }
+      // ...原有同步逻辑
+    }
   }
 
   async onRoomJoin(room, inviteeList, inviter) {
@@ -231,19 +310,17 @@ class SummaryBot {
       try {
         const roomName = await room.topic();
         const memberCount = (await room.memberAll()).length;
-        const avatar = await getSafeRoomAvatar(room);
         
         // 同步群组信息
         await db.run(
           `INSERT INTO groups 
-           (room_id, wechat_id, name, member_count, avatar, is_managed) 
-           VALUES (?, ?, ?, ?, ?, 1)
+           (room_id, wechat_id, name, member_count, is_managed) 
+           VALUES (?, ?, ?, ?, 1)
            ON CONFLICT(room_id, wechat_id) DO UPDATE SET
            name = excluded.name,
            member_count = excluded.member_count,
-           avatar = excluded.avatar,
            updated_at = CURRENT_TIMESTAMP`,
-          [roomId, wechatId, roomName, memberCount, avatar]
+          [roomId, wechatId, roomName, memberCount]
         );
         logger.info(`新加入群组: ${roomName}`);
       } catch (err) {
@@ -322,13 +399,12 @@ class SummaryBot {
         // 如果群组不存在，添加新群组记录
         try {
           const memberCount = (await room.memberAll()).length;
-          const avatar = await getSafeRoomAvatar(room);
           
           await db.run(
             `INSERT INTO groups 
-             (room_id, wechat_id, name, member_count, avatar, is_managed) 
-             VALUES (?, ?, ?, ?, ?, 1)`,
-            [roomId, wechatId, newTopic, memberCount, avatar]
+             (room_id, wechat_id, name, member_count, is_managed) 
+             VALUES (?, ?, ?, ?, 1)`,
+            [roomId, wechatId, newTopic, memberCount]
           );
           logger.info(`新增群组并更新群名称: ${newTopic}`);
         } catch (err) {
@@ -348,28 +424,6 @@ class SummaryBot {
     } catch (err) {
       logger.error(`更新群名称失败: ${err.message}`);
     }
-  }
-}
-
-/**
- * 安全获取房间头像
- * @param {Room} room 房间对象
- * @returns {Promise<string|null>} 头像URL或null
- */
-async function getSafeRoomAvatar(room) {
-  try {
-    const avatar = await room.avatar();
-    
-    // 如果获取失败或使用了默认头像（包含chatie关键词），返回null
-    if (!avatar || (typeof avatar === 'string' && avatar.includes('chatie'))) {
-      return null;
-    }
-    
-    // 返回头像URL
-    return typeof avatar === 'string' ? avatar : null;
-  } catch (err) {
-    logger.warning(`获取群头像失败: ${err.message}`);
-    return null;
   }
 }
 

@@ -17,8 +17,11 @@ async function bootstrap() {
 }
 
 process.on('SIGINT', async () => {
-  logger.info('正在关闭服务...');
-  await db.close();
+  logger.info('正在安全关闭数据库...');
+  
+  await db.checkpoint();
+  await db.close(); 
+  
   if (bot) {
     await bot.stop();
     logger.info('机器人已停止');

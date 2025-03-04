@@ -93,6 +93,15 @@ class Database {
       throw err;
     }
   }
+
+  async checkpoint() {
+    await this.run('PRAGMA wal_checkpoint(FULL)');
+  }
 }
 
 module.exports = new Database(); 
+
+setInterval(async () => {
+  await module.exports.checkpoint();
+  logger.info('已执行数据库检查点');
+}, 5 * 60 * 1000); // 每5分钟执行一次 

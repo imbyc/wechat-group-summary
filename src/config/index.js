@@ -13,7 +13,7 @@ module.exports = {
   },
   db: {
     path: process.env.DB_PATH,
-    walMode: true
+    walMode: process.env.DB_WAL_MODE === 'true'
   },
   logs: {
     level: process.env.LOG_LEVEL || 'info',
@@ -25,5 +25,9 @@ module.exports = {
     versionScriptPath: process.env.VERSION_SCRIPT_PATH || './change_version.py',
     checkInterval: parseInt(process.env.WECHAT_CHECK_INTERVAL || '30000'),
     maxRetries: parseInt(process.env.WECHAT_MAX_RETRIES || '3')
+  },
+  sync: {
+    delay: 3000,         // 3秒延迟
+    heartbeatInterval: 5 // 秒
   }
 }; 
