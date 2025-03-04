@@ -9,7 +9,7 @@ class Database {
 
   async connect(path = './data/chat.db') {
     return new Promise((resolve, reject) => {
-      this.db = new sqlite3.Database(path, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
+      this.db = new sqlite3.Database(path, sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, async (err) => {
         if (err) {
           logger.error(`数据库连接失败: ${err.message}`);
           return reject(err);
@@ -17,6 +17,17 @@ class Database {
         
         logger.info(`已连接数据库: ${path}`);
         this.runPragma();
+        
+        const { journal_mode } = await this.get("PRAGMA journal_mode");
+        logger.info(`当前journal模式: ${journal_mode}`);
+
+        try {
+          await this.checkpoint();
+          logger.info('成功合并WAL文件');
+        } catch (err) {
+          logger.error('WAL文件合并失败:', err.message);
+        }
+        
         resolve();
       });
     });

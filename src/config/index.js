@@ -6,8 +6,10 @@ module.exports = {
     token: null,
     reLoginInterval: 300 // 5分钟重试间隔
   },
-  deepseek: {
-    endpoint: 'https://api.deepseek.com/v1/chat',
+  siliconflow: {
+    endpoint: 'https://api.siliconflow.cn/v1',
+    apiKey: process.env.SILICONFLOW_API_KEY,
+    model: 'deepseek-ai/DeepSeek-R1', // 或 Distill 版本
     maxContext: 200,
     rateLimit: 30
   },

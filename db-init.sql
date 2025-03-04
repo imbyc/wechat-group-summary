@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE INDEX idx_groups_updated ON groups (updated_at);
 
 -- 消息记录表
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   room_id TEXT NOT NULL,
   msg_id TEXT NOT NULL UNIQUE,
@@ -25,9 +25,9 @@ CREATE TABLE IF NOT EXISTS messages (
   sender_name TEXT NOT NULL,
   content TEXT NOT NULL,
   msg_time DATETIME(3) NOT NULL,
-  msg_type INTEGER NOT NULL CHECK(msg_type BETWEEN 1 AND 8),
+  msg_type TEXT NOT NULL,
   is_at_me BOOLEAN DEFAULT 0,
-  wechat_id TEXT NOT NULL,  -- 新增字段
+  wechat_id TEXT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

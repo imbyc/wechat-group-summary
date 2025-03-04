@@ -99,10 +99,6 @@ class SummaryBot {
             logger.error('未处理的Promise拒绝:', reason);
           });
           
-          // 分步执行同步操作
-          logger.info('开始初始化数据库连接...');
-          await db.connect(config.db.path);
-
           logger.info('开始同步群组信息...');
           await this.syncRoomList();
           
