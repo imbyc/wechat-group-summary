@@ -50,17 +50,34 @@ async function generateSummary(roomId, wechatId) {
       return;
     }
 
+    // 在API调用前添加请求日志
+    logger.debug('准备调用DeepSeek API', {
+      model: config.siliconflow.model,
+      messageCount: messages.length,
+      timeRange: `${messages[0].msg_time} ~ ${messages[messages.length-1].msg_time}`
+    });
+
+    // 记录完整的提示词内容
+    const systemPrompt = SYSTEM_PROMPT;
+    const userPrompt = buildUserPrompt(messages, group.name);
+    logger.debug('系统提示词:', systemPrompt.substring(0, 200) + '...'); // 截取前200字符
+    logger.debug('用户提示词:', userPrompt.substring(0, 500) + '...'); // 截取前500字符
+
+    // 调用API时添加请求参数记录
+    const requestPayload = {
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      model: config.siliconflow.model,
+      temperature: 0.3
+    };
+    logger.debug('完整请求参数:', JSON.stringify(requestPayload, null, 2));
+
     // 调用DeepSeek API
     const response = await axios.post(
       `${config.siliconflow.endpoint}/chat/completions`,
-      {
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(messages, group.name) }
-        ],
-        model: config.siliconflow.model,
-        temperature: 0.3
-      },
+      requestPayload,
       {
         headers: {
           "Content-Type": "application/json",
@@ -101,7 +118,22 @@ async function generateSummary(roomId, wechatId) {
     return summaryText;
 
   } catch (error) {
-    logger.error('生成总结失败:', error.response?.data || error.message);
+    const errorData = {
+      request: {
+        messageCount: messages.length,
+        timeRange: messages.length > 0 ? 
+          `${messages[0].msg_time} ~ ${messages[messages.length-1].msg_time}` : '无消息',
+        promptPreview: messages.length > 0 ? 
+          messages.slice(0, 3).map(m => m.content) : []
+      },
+      response: error.response ? {
+        status: error.response.status,
+        data: error.response.data
+      } : null,
+      errorMessage: error.message
+    };
+    
+    logger.error('生成总结失败详情:', JSON.stringify(errorData, null, 2));
     throw error;
   }
 }
