@@ -18,4 +18,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-*.swo 
+*.swo
+
+
+/request_*.json
+/test.js
